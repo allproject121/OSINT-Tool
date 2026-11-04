@@ -1,0 +1,63 @@
+app:
+  image: lissy93/domain-locker:latest
+  port: 3000
+  env:
+    DL_ENV_TYPE: selfHosted
+    DL_PG_HOST: domain-locker-postgres
+    DL_PG_PORT: 5432
+    DL_PG_USER: postgres
+    DL_PG_PASSWORD: changeme2420
+    DL_PG_NAME: domain_locker
+    TZ: UTC
+  secretEnv: {}
+    # To source DL_PG_PASSWORD from a Kubernetes Secret, uncomment and configure below.
+    # This will override the value in app.env for the specified key.
+    # DL_PG_PASSWORD:
+    #   name: my-secret
+    #   key: dl_pg_password
+    # Note: If DL_PG_PASSWORD is specified here, Postgres will also use the same Secret
+    # unless postgres.passwordFromSecret is set.
+  ingress:
+    enabled: true
+    # ingressClassName: "nginx"
+    annotations: # nginx.ingress.kubernetes.io/rewrite-target: /
+    hosts:
+    - host: domain-locker.localhost.com
+      paths:
+      - path: /
+        service:
+          name: domain-locker-app
+          port: 80
+    # tls:
+    # - hosts:
+    #   - domain-locker.localhost.com
+    #   secretName: domain-locker.localhost.com-tls
+
+postgres:
+  enabled: true
+  image: postgres:15-alpine
+  port: 5432
+  env:
+    POSTGRES_DB: domain_locker
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: changeme2420
+    TZ: UTC
+  # Optionally source the POSTGRES_PASSWORD from a Kubernetes Secret.
+  # When set, this will override env.POSTGRES_PASSWORD.
+  # passwordFromSecret:
+  #   name: my-postgres-secret
+  #   key: postgres_password
+  # If passwordFromSecret is not set, this chart will fall back to app.secretEnv.DL_PG_PASSWORD
+  # when present, so app and Postgres share the same secret by default.
+  persistence:
+    enabled: true
+    size: 1Gi
+
+# Deprecated. The app schedules these jobs internally, so this is off by
+# default. Enable it only to drive the jobs from outside the cluster.
+updater:
+  enabled: false
+  schedule: "0 3 * * *"
+  image: alpine:3.20
+  # Needed only when DL_API_KEY is set on the app
+  apiKey: ""

@@ -1,0 +1,285 @@
+---
+
+
+import Layout from '@layouts/Layout.astro';
+import Button from '@components/form/Button.astro';
+import Main from '@components/scafold/MainCard.astro';
+import ServiceList from '@components/things/ServiceList.astro';
+import type { AwesomePrivacy, Section, Service, ShortService } from '../types/Service';
+import { fetchData, slugify } from '@utils/fetch-data';
+import { parseMarkdown } from '@utils/parse-markdown';
+import { truncate } from '@utils/meta-tags';
+
+interface Props {
+  slug: string,
+  title: string,
+  services: Service[],
+  intro?: string,
+  notableMentions?: ShortService[] | string,
+  furtherInfo?: string,
+  wordOfWarning?: string,
+  alternativeTo?: string[];
+  categoryName: string,
+  otherSections: Section[],
+}
+
+const {
+  title, otherSections, services, notableMentions, furtherInfo, wordOfWarning,
+  alternativeTo, categoryName, intro,
+} = Astro.props;
+
+/**
+ * Make a list of keywords, for the <meta keywords> tag
+ */
+const makeKeyWordTag = () => {
+  const keywords = [];
+  keywords.push(`free and open source ${title} software`);
+  keywords.push(`private ${title} comparison`);
+  (alternativeTo || []).forEach((alt: string) => {
+    keywords.push(`privacy-respecting ${alt} alternative`);
+    keywords.push(`free open source ${alt} alternative`);
+  });
+  (services || []).forEach((serv: Service) => {
+    keywords.push(serv.name);
+  });
+  keywords.push('ad free');
+  keywords.push('open source software');
+  keywords.push('privacy respecting apps');
+  return keywords.join(', ');
+};
+
+/**
+ * Make a page title
+ */
+const makePageTitle = () => {
+  return `${title} | Awesome Privacy`;
+};
+
+const makeBreadcrumbs = () => {
+  return [
+    { name: 'Home', item: '/' },
+    { name: categoryName, item: slugify(categoryName) },
+    { name: title, item: `${slugify(categoryName)}/${slugify(title)}` },
+  ];
+};
+
+/**
+ * Make a string page intro, for the description tag
+ */
+const makeDescriptionTag = () => {
+  let description = `Privacy-respecting ${title}. `;
+  if (services && services.length > 0) {
+    description += `Compare ${services.map((serv: Service) => serv.name).join(', ')}. `;
+  } else {
+    description += `Find private apps and services. This section is still a work in progress. `;
+  }
+  if (alternativeTo && alternativeTo.length > 0) {
+    description += `The best secure, encrypted alternatives to ${alternativeTo.join(', ')}.`;
+  }
+  return truncate(description.trim());
+};
+
+const makeCarasolData = () => {
+  if (!services.length) return undefined;
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "itemListElement": services.map((service, index) => ({
+      "@type": "ListItem",
+      "position": index + 1,
+      "url": `https://awesome-privacy.xyz/${slugify(categoryName)}/${slugify(title)}/${slugify(service.name)}/`,
+      "item": {
+        "@type": "Service",
+        "name": service.name,
+        "description": service.description,
+        "image": service.icon,
+        "url": `https://awesome-privacy.xyz/${slugify(categoryName)}/${slugify(title)}/${slugify(service.name)}/`
+      }
+    }))
+  }
+};
+
+export async function getStaticPaths() {
+  const pages = await fetchData().then((data) => {
+    const results: Array<Props> = [];
+    if (!data || !data.categories) return results;
+    (data as AwesomePrivacy).categories.forEach((category) => {
+      const sections = category.sections.map((section) => ({
+        slug: `${slugify(category.name)}/${slugify(section.name)}`,
+        title: section.name,
+        services: section.services,
+        intro: section.intro,
+        notableMentions: section.notableMentions,
+        furtherInfo: section.furtherInfo,
+        wordOfWarning: section.wordOfWarning,
+        alternativeTo: section.alternativeTo,
+        categoryName: category.name,
+        otherSections: category.sections,
+      }));
+      results.push(...sections);
+    });
+    return results;
+  });
+
+  return pages.map((props: Props) => {
+    return {params: { section: props.slug }, props };
+  });
+}
+
+const makePaginationLinks = () => {
+  const index = otherSections.findIndex(section => section.name === title);
+  const previousSection = index >  0 ? otherSections[index -  1].name : null;
+  const nextSection = index < otherSections.length -  1 ? otherSections[index +  1].name : null;
+  return { previous: previousSection, next: nextSection };
+};
+
+const { previous, next } = makePaginationLinks();
+
+---
+
+<Layout
+  title={makePageTitle()}
+  keywords={makeKeyWordTag()}
+  description={makeDescriptionTag()}
+  breadcrumbs={makeBreadcrumbs()}
+  customSchemaJson={makeCarasolData()}
+>
+  <Main>
+
+    <div class="breadcrumbs">
+      <span>
+        <a href="/">Awesome Privacy</a>
+        ➔ <a href={`/${slugify(categoryName)}/`}>{categoryName}</a>
+        ➔ <a href={`/${slugify(categoryName)}/${slugify(title)}/`}>{title}</a>
+      </span>
+    </div>
+
+    <h1>{title}</h1>
+
+    {intro && (
+      <section class="intro">
+        <p set:html={parseMarkdown(intro)}></p>
+      </section>
+    )}
+    
+    <ServiceList services={services} sectionName={title} categoryName={categoryName} />
+
+    <details class="about-this-page">
+      <summary>Objective of this page</summary>
+      <p>
+        Find the best free, open source, E2E encrypted and private alternative to
+        {(alternativeTo || []).map((alt) => (<span>{alt}, </span>))} now.
+      </p>
+      <p>
+        Compare {(services || []).map((serv) => (<span>{serv.name} vs </span>))}
+      </p>
+      <p>
+        Discover the best {title} tools for Android, iPhone, Linux, PC and Chrome to download now.
+        And choose secure, self-hosted, peer-to-peer and independant alternatives
+      </p>
+      <p>
+        <b>Stop the invasion of privacy from big tech, improve data security stay safe.</b>
+      </p>
+    </details>
+
+
+    {notableMentions && (
+      <section class="notable-mentions">
+        <h2>Notable Mentions</h2>
+        { Array.isArray(notableMentions) ?
+          <ul>
+            {notableMentions.map((mention) => (
+              <li>
+                <a href={mention.url}>{mention.name}</a> 
+                {mention.description && (
+                  <span>- </span>
+                  <span set:html={parseMarkdown(mention.description)}></span>
+                )}
+              </li>
+            ))}
+          </ul> :
+          <p set:html={parseMarkdown(notableMentions)}></p>
+      }
+      </section>
+    )}
+
+    {furtherInfo && (
+      <section class="further-info">
+        <h2>Notes</h2>
+        <p set:html={parseMarkdown(furtherInfo)}></p>
+      </section>
+    )}
+
+    {wordOfWarning && (
+      <section class="word-of-warning">
+        <h2>Word of Warning</h2>
+        <p set:html={parseMarkdown(wordOfWarning)}></p>
+      </section>
+    )}
+
+    {services.length > 0 && (<section class="submit-alternative">
+      <h2>Submit New Entry</h2>
+      <p>
+        Are we missing anything?
+        You can help us improve this page, by <a href="/submit/">submitting a new entry</a>
+      </p>
+    </section>
+    )}
+
+    <div class="pagination-navigation">
+      { previous ? (
+        <Button url={`/${slugify(categoryName)}/${slugify(previous)}/`}>
+          <span>← Previous</span>
+          <p>{previous}</p>
+        </Button>
+      ) : <p class="nothing"></p>}
+      <a href={`/${slugify(categoryName)}/`} class="go-to-category">
+        View all in {categoryName} ({otherSections.length})
+      </a>
+      { next && (
+        <Button url={`/${slugify(categoryName)}/${slugify(next)}/`}>
+          <span>Next →</span>
+          <p>{next}</p>
+        </Button>
+      )}
+    </div>
+  </Main>
+</Layout>
+
+<style lang="scss">
+
+section {
+  padding-bottom: var(--space-md);
+  &:not(:last-child) {
+    border-bottom: 2px solid var(--accent-3);
+  }
+}
+
+h1 {
+    font-family: var(--font-subtitle);
+    font-size: var(--text-3xl);
+    margin: -2rem 0 var(--space-lg) -2rem;
+    box-shadow: var(--shadow-lg);
+    background: var(--accent);
+    color: var(--accent-fg);
+    width: fit-content;
+    padding: var(--space-xs) var(--space-sm);
+  }
+
+
+.intro {
+  font-style: italic;
+  opacity: var(--opacity-soft);
+}
+
+
+.about-this-page {
+  summary {
+    display: none;
+  }
+  font-size: var(--text-sm);
+  opacity: var(--opacity-soft);
+}
+
+
+</style>

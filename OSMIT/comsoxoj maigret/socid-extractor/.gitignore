@@ -1,0 +1,17 @@
+__dev__
+__pycache__
+*.eggs
+*.egg-info
+.idea
+.DS_Store
+.cache
+build
+dist
+*.pyc
+venv
+*.log
+*.json
+*.txt
+plugins
+tests/test_extended.py
+*.mo

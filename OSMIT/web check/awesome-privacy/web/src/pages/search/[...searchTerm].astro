@@ -1,0 +1,36 @@
+---
+import Layout from '@layouts/Layout.astro';
+import Search from '@components/things/Search.svelte';
+import SearchResults from '@components/things/SearchResults.svelte';
+
+export const prerender = false;
+
+const searchTerm = Astro.params.searchTerm || '';
+---
+
+<Layout title={`Search: ${searchTerm} | Awesome Privacy`}>
+	<section class="search-box">
+		<h1>Search</h1>
+		<Search client:visible previousSearch={searchTerm} />
+	</section>
+	<SearchResults client:load searchTerm={searchTerm} />
+</Layout>
+
+<style lang="scss">
+	.search-box {
+		display: flex;
+		flex-direction: column;
+		margin: var(--space-lg) auto;
+		padding: var(--space-md);
+		width: calc(100% - 2rem);
+		max-width: var(--width-container);
+
+		h1 {
+			font-size: var(--text-4xl);
+			color: var(--accent-3-text);
+			font-family: var(--font-subtitle);
+			text-align: center;
+			margin: var(--space-md) 0;
+		}
+	}
+</style>

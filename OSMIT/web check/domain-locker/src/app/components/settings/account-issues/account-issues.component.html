@@ -1,0 +1,57 @@
+@if (loading) {
+  <p-progressSpinner styleClass="flex mx-auto" />
+}
+
+@if (!loading && accountIssues.length > 0) {
+  <div class="account-issues">
+    @for (issue of accountIssues; track issue) {
+      <p-messages [severity]="issue.type">
+        <ng-template pTemplate>
+          <div class="flex items-center w-full">
+            @if (issue.type === 'success') {
+              <i class="pi pi-check-circle"></i>
+            }
+            @if (issue.type === 'info') {
+              <i class="pi pi-info-circle"></i>
+            }
+            @if (issue.type === 'warn') {
+              <i class="pi pi-minus-circle"></i>
+            }
+            @if (issue.type === 'error') {
+              <i class="pi pi-times-circle"></i>
+            }
+            @if (
+              issue.type !== 'success' &&
+              issue.type !== 'info' &&
+              issue.type !== 'warn' &&
+              issue.type !== 'error'
+            ) {
+              <i class="pi pi-arrow-circle-right"></i>
+            }
+            <div class="ml-2 flex flex-1 items-center justify-between">
+              {{ issue.message }}
+              @if (issue.action) {
+                <p-button
+                  class="ml-2 min-w-52"
+                  styleClass="w-full"
+                  [severity]="
+                    issue.type === 'warn'
+                      ? 'warning'
+                      : issue.type === 'error'
+                        ? 'danger'
+                        : issue.type === 'info'
+                          ? 'info'
+                          : 'primary'
+                  "
+                  [label]="issue.action.label"
+                  (click)="issue.action.callback ? issue.action.callback() : null"
+                  [routerLink]="issue.action.route || null"
+                />
+              }
+            </div>
+          </div>
+        </ng-template>
+      </p-messages>
+    }
+  </div>
+}

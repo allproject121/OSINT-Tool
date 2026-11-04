@@ -1,0 +1,303 @@
+---
+import Layout from '@layouts/Layout.astro';
+import ServiceCard from '@components/things/ServiceCard.astro';
+import type { AwesomePrivacy, Section, Service } from '../types/Service';
+import { fetchData, slugify } from '@utils/fetch-data';
+import FontAwesome from '@components/form/FontAwesome.svelte';
+
+const categories = (await fetchData() as AwesomePrivacy)?.categories || [];
+---
+
+<Layout
+	title="All Services | Awesome Privacy"
+	description="Browse every privacy-respecting service and app listed on Awesome Privacy, organised by category and section."
+>
+	<div class="page">
+		<aside class="sidebar" aria-label="Table of contents">
+			<button
+				class="toc-toggle"
+				type="button"
+				aria-expanded="false"
+				aria-controls="toc"
+			>Contents</button>
+			<nav id="toc" class="toc">
+				<div class="toc-inner">
+					{categories.map((category) => (
+						<details open>
+							<summary>{category.name}</summary>
+							<ul>
+								<li>
+									<a href={`#${slugify(category.name)}`}>{category.name} (all)</a>
+								</li>
+								{category.sections.map((section: Section) => (
+									<li>
+										<a href={`#${slugify(category.name)}-${slugify(section.name)}`}>
+											{section.name}
+										</a>
+									</li>
+								))}
+							</ul>
+						</details>
+					))}
+				</div>
+			</nav>
+		</aside>
+
+		<main>
+			<h1 class="page-title">All Listings</h1>
+			{categories.map((category) => (
+				<Fragment>
+				<h2 id={slugify(category.name)}>
+					<FontAwesome iconName={slugify(category.name)} />
+					<a href={`/${slugify(category.name)}/`}>{category.name}</a>
+				</h2>
+				<article>
+					{category.sections.map((section: Section) => (
+						<Fragment>
+							<h3 id={`${slugify(category.name)}-${slugify(section.name)}`}>
+								<a href={`/${slugify(category.name)}/${slugify(section.name)}/`}>
+									{section.name}
+								</a>
+							</h3>
+							<section class="grid">
+								{[...section.services].sort((a, b) => a.name.localeCompare(b.name)).map((service: Service) => (
+									<ServiceCard
+										service={service}
+										sectionName={section.name}
+										categoryName={category.name}
+									/>
+								))}
+							</section>
+							{section.services.length === 0 && (
+								<div class="nothing-yet">
+									<p>
+										<strong>This section is still a work in progress</strong><br />
+										Check back soon, or help us complete it by submitting a
+										<a href="https://github.com/lissy93/awesome-privacy">pull request</a>
+										or <a href="/submit/">entry</a>.
+									</p>
+								</div>
+							)}
+						</Fragment>
+					))}
+				</article>
+				</Fragment>
+			))}
+		</main>
+	</div>
+</Layout>
+
+<script>
+	document.addEventListener('astro:page-load', () => {
+		const links = document.querySelectorAll<HTMLAnchorElement>('.toc a');
+		const headings = document.querySelectorAll<HTMLElement>('h2[id], h3[id]');
+		const toggle = document.querySelector('.toc-toggle');
+		const toc = document.querySelector('.toc');
+
+		// Scroll-spy: highlight active TOC link
+		const linkMap = new Map<string, HTMLAnchorElement>();
+		links.forEach((link) => {
+			const id = link.getAttribute('href')?.slice(1);
+			if (id) linkMap.set(id, link);
+		});
+
+		let active: HTMLAnchorElement | null = null;
+
+		const observer = new IntersectionObserver((entries) => {
+			entries.forEach((entry) => {
+				if (entry.isIntersecting) {
+					active?.classList.remove('active');
+					const link = linkMap.get(entry.target.id);
+					if (link) {
+						link.classList.add('active');
+						link.closest('details')?.setAttribute('open', '');
+						active = link;
+					}
+				}
+			});
+		}, { rootMargin: '0px 0px -70% 0px' });
+
+		headings.forEach((h) => observer.observe(h));
+
+		// Mobile TOC toggle
+		const onToggle = () => {
+			const isOpen = toc?.classList.toggle('open');
+			toggle?.setAttribute('aria-expanded', String(!!isOpen));
+		};
+		toggle?.addEventListener('click', onToggle);
+
+		// Close mobile TOC on link click
+		const onLinkClick = () => {
+			toc?.classList.remove('open');
+			toggle?.setAttribute('aria-expanded', 'false');
+		};
+		links.forEach((link) => link.addEventListener('click', onLinkClick));
+
+		// Cleanup on page transition
+		document.addEventListener('astro:before-swap', () => {
+			observer.disconnect();
+			toggle?.removeEventListener('click', onToggle);
+			links.forEach((link) => link.removeEventListener('click', onLinkClick));
+		}, { once: true });
+	});
+</script>
+
+<style lang="scss">
+	.page {
+		display: flex;
+		gap: var(--space-lg);
+		max-width: calc(100vw - 4rem);
+		margin: 0 auto;
+		padding: var(--space-md);
+	}
+
+	.sidebar {
+		position: sticky;
+		top: var(--space-md);
+		align-self: flex-start;
+		width: 260px;
+		flex-shrink: 0;
+		max-height: calc(100vh - var(--space-lg));
+		overflow-y: auto;
+
+		.toc-toggle {
+			display: none;
+			width: 100%;
+			padding: var(--space-sm) var(--space-md);
+			background: var(--accent-3);
+			color: var(--accent-3-fg);
+			font-family: var(--font-subtitle);
+			font-size: var(--text-md);
+			font-weight: bold;
+			border: var(--border-heavy);
+			box-shadow: var(--shadow-sm);
+			cursor: pointer;
+			&:hover { box-shadow: var(--shadow-sm-hover); }
+		}
+
+		.toc {
+			details {
+				summary {
+					display: flex;
+					align-items: center;
+					font-weight: bold;
+					font-family: var(--font-subtitle);
+					font-size: var(--text-base);
+					padding: var(--space-xs) 0;
+					cursor: pointer;
+					list-style: none;
+					color: var(--foreground);
+					opacity: var(--opacity-subtle);
+					&::marker, &::-webkit-details-marker { display: none; }
+					&::before {
+						content: '▸';
+						margin-right: var(--space-xs);
+						transition: var(--transition-fast);
+					}
+				}
+				&[open] > summary::before { transform: rotate(90deg); }
+			}
+			ul {
+				list-style: none;
+				padding-left: var(--space-md);
+				margin: 0 0 var(--space-xs) 0;
+			}
+			a {
+				color: var(--foreground);
+				text-decoration: none;
+				font-size: var(--text-sm);
+				opacity: var(--opacity-soft);
+				transition: var(--transition-fast);
+				display: block;
+				padding: var(--space-xs) 0;
+				&:hover { color: var(--accent-text); opacity: 1; }
+				&.active { color: var(--accent-text); opacity: 1; font-weight: bold; }
+			}
+		}
+	}
+
+	main {
+		flex: 1;
+		min-width: 0;
+
+		h2, h3 { scroll-margin-top: var(--space-lg); }
+
+		h2 {
+			margin: var(--space-lg) auto 0 auto;
+			font-size: var(--text-4xl);
+			text-align: center;
+			opacity: var(--opacity-muted);
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			gap: var(--space-md);
+			a { color: var(--accent-3-text); text-decoration: none; }
+			:global(svg) {
+				width: var(--text-4xl);
+				height: var(--text-4xl);
+				color: var(--accent-3-text);
+			}
+		}
+
+		h3 {
+			font-size: var(--text-3xl);
+			margin: var(--space-lg) 0 var(--space-md) 0;
+			box-shadow: var(--shadow-lg);
+			background: var(--accent);
+			color: var(--accent-fg);
+			width: fit-content;
+			padding: var(--space-xs) var(--space-sm);
+			a {
+				color: var(--accent-fg);
+				font-family: var(--font-subtitle);
+				text-decoration: none;
+			}
+		}
+
+		.grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+			gap: var(--space-md);
+		}
+
+		.nothing-yet {
+			background: var(--surface);
+			border: var(--border-heavy);
+			box-shadow: var(--shadow-lg);
+			border-radius: var(--curve-sm);
+			p {
+				font-size: var(--text-md);
+				opacity: var(--opacity-subtle);
+				font-style: italic;
+				text-align: center;
+				margin: var(--space-2xl) auto;
+				a { color: var(--accent-text); }
+			}
+		}
+	}
+
+	@media (max-width: 768px) {
+		.page { flex-direction: column; }
+		.sidebar {
+			position: static;
+			width: 100%;
+			max-height: none;
+			overflow: visible;
+			border: var(--border-heavy);
+			box-shadow: var(--shadow-lg);
+			background: var(--surface);
+			border-radius: var(--curve-sm);
+
+			.toc-toggle { display: block; }
+			.toc {
+				display: grid;
+				grid-template-rows: 0fr;
+				transition: grid-template-rows 0.3s ease;
+				.toc-inner { overflow: hidden; padding: 0 var(--space-sm); }
+				&.open { grid-template-rows: 1fr; }
+			}
+		}
+		main h2 { font-size: var(--text-3xl); }
+		main h3 { font-size: var(--text-2xl); }
+	}
+</style>

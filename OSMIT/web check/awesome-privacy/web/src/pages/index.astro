@@ -1,0 +1,223 @@
+---
+import Layout from '@layouts/Layout.astro';
+import Hero from '@components/Hero.astro';
+import Search from '@components/things/Search.svelte';
+import SectionList from '@components/things/SectionList.astro';
+import SavedServices from '@components/things/SavedServices.svelte';
+import LatestUpdates from '@components/things/LatestUpdates.astro';
+
+import { fetchData } from '@utils/fetch-data';
+import type { Category } from 'src/types/Service';
+
+const categories = (await fetchData())?.categories || ([] as Category[]);
+
+const description =
+	'Find privacy-respecting alternatives to the apps and services you use every day. ' +
+	'A curated directory of open source, secure and ad-free software.';
+---
+
+<Layout description={description}>
+	<Hero />
+	<main>
+		<div class="action-card">
+			<Search client:visible />
+			<span class="action-divider">or</span>
+			<a href="/all/" class="browse-cta"> Browse All Listings &rarr; </a>
+		</div>
+		<h2 class="browse-title"><a href="/all/">Categories</a></h2>
+		<ul class="categories">
+			{
+				categories.map((category) => (
+					<li class="category">
+						<SectionList title={category.name} sections={category.sections} />
+					</li>
+				))
+			}
+		</ul>
+		<div class="categories-footer">
+			<a class="small-button" href="/all/">View everything &rarr;</a>
+		</div>
+
+		<h2><a href="/changelog/">Latest Updates</a></h2>
+		<LatestUpdates categories={categories} />
+
+		<h2><a href="/inventory/">Saved Items</a></h2>
+		<SavedServices client:load />
+
+		<h2>
+			<a href="/about/">About</a>
+		</h2>
+		<div class="about-summary">
+			<p>
+				Awesome Privacy is a collection of privacy-respecting services and
+				tools. The aim is to help you escape big tech, and choose software that
+				respects your privacy.
+			</p>
+			<p>
+				Why? Because privacy is a fundamental human right; without it, we're
+				just open books in a world where everyone's watching. Let's take control
+				back.
+			</p>
+			<p>
+				Noticed something that should be added / removed / amended? We're a
+				community-driven resource, so welcome contributions of any nature. All
+				content and code is <a href="https://github.com/lissy93/awesome-privacy"
+					>open source</a
+				>.
+			</p>
+			<p>
+				If you've found Awesome Privacy useful, help us out by sharing it with
+				others, contributing, or consider <a
+					href="https://github.com/sponsors/lissy93">sponsoring me</a
+				> on GitHub.
+			</p>
+			<div class="about-footer">
+				<a class="small-button" href="/about/">Keep reading &rarr;</a>
+			</div>
+		</div>
+	</main>
+</Layout>
+
+<style lang="scss">
+	@use '../styles/mixins' as *;
+	main {
+		margin: auto;
+		padding: var(--space-md);
+		width: var(--width-container);
+		max-width: var(--width-container-max);
+		font-size: 20px;
+		line-height: 1.6;
+		@media (max-width: 768px) {
+			padding: 0;
+		}
+		.categories-footer {
+			display: flex;
+			justify-content: flex-end;
+			margin: var(--space-md) 0;
+		}
+	}
+	.action-card {
+		display: flex;
+		align-items: end;
+		gap: var(--space-md);
+		background: var(--surface);
+		border: var(--border-heavy);
+		border-radius: var(--curve-sm);
+		box-shadow: var(--shadow-lg);
+		padding: var(--space-md) var(--space-lg);
+		margin: var(--space-lg) auto;
+		width: 100%;
+		box-sizing: border-box;
+		:global(.search-wrap) {
+			flex: 1;
+			:global(label) {
+				font-size: var(--text-sm);
+			}
+		}
+		.action-divider {
+			font-family: var(--font-subtitle);
+			opacity: var(--opacity-soft);
+			flex-shrink: 0;
+		}
+		.browse-cta {
+			flex-shrink: 0;
+			padding: var(--space-sm) var(--space-lg);
+			background: var(--accent-3);
+			color: var(--accent-3-fg);
+			font-family: var(--font-subtitle);
+			font-size: var(--text-md);
+			font-weight: bold;
+			text-decoration: none;
+			border: var(--border-heavy);
+			box-shadow: var(--shadow-sm);
+			white-space: nowrap;
+			box-sizing: border-box;
+			&:hover {
+				box-shadow: var(--shadow-sm-hover);
+				opacity: 0.95;
+			}
+		}
+		@media (max-width: 768px) {
+			flex-direction: column;
+			align-items: center;
+			width: 95%;
+			padding: var(--space-md);
+			.browse-cta {
+				width: 100%;
+				text-align: center;
+			}
+		}
+	}
+
+	h2 {
+		font-size: var(--text-4xl);
+		color: var(--accent-3-text);
+		font-family: var(--font-subtitle);
+		text-align: center;
+		margin: var(--space-xl) 0 var(--space-md) 0;
+		a {
+			text-decoration: none;
+			color: var(--accent-3-text);
+			@include underline-hover(var(--accent));
+		}
+	}
+
+	.about-summary {
+		background: var(--surface);
+		border: var(--border-heavy);
+		border-radius: var(--curve-sm);
+		box-shadow: var(--shadow-md);
+		padding: var(--space-md);
+		width: 100%;
+		box-sizing: border-box;
+		margin: 0 auto;
+		.about-footer {
+			display: flex;
+			justify-content: flex-end;
+			margin-top: var(--space-md);
+		}
+	}
+
+	.categories {
+		columns: 6 300px;
+		column-gap: var(--space-md);
+		padding: 0;
+		.category {
+			background: var(--surface);
+			border: var(--border-heavy);
+			border-radius: var(--curve-sm);
+			box-shadow: var(--shadow-md);
+			padding: var(--space-md);
+			width: 85%;
+			display: inline-flex;
+			flex-direction: column;
+			margin: var(--space-md);
+			@media (max-width: 768px) {
+				margin: var(--space-md) 0;
+				width: 90%;
+			}
+			.category-title {
+				text-decoration: none;
+				color: var(--foreground);
+			}
+			h3 {
+				font-family: var(--font-subtitle);
+				font-weight: bold;
+				margin: 0;
+				font-size: var(--text-2xl);
+			}
+			.sections {
+				padding-left: var(--space-md);
+				.section {
+					a {
+						text-decoration: none;
+						color: var(--foreground);
+					}
+					.service-count {
+						color: var(--accent-3-text);
+					}
+				}
+			}
+		}
+	}
+</style>

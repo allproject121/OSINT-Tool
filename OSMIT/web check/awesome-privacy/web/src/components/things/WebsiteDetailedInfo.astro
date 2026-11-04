@@ -1,0 +1,338 @@
+---
+
+import type { WebsiteData } from '@utils/fetch-website-info';
+import type { WebsiteTracker } from '@utils/fetch-trackers-info';
+import { analyzeSecurityChecks } from '@utils/security-check-mappings';
+import FontAwesome from "@components/form/FontAwesome.svelte"
+import Button from '@components/form/Button.astro';
+
+interface Props {
+  websiteInfo: WebsiteData;
+  url: string;
+  trackers?: WebsiteTracker[];
+};
+
+const { websiteInfo, url, trackers } = Astro.props;
+
+const categoryLabels: {[key: string]: string} = {
+    is_torrent: 'Torrenting',
+    is_vpn_provider: 'VPN Provider',
+    is_free_hosting: 'Free Hosting',
+    is_anonymizer: 'Anonymizer',
+    is_url_shortener: 'URL Shortner',
+    is_free_dynamic_dns: 'Free Dynamic DNS',
+    is_code_sandbox: 'Code Sandbox',
+    is_form_builder: 'Form Builder',
+    is_free_file_sharing: 'File Sharing',
+    is_pastebin: 'Pastebin'
+};
+
+const siteCategories = Object.entries(websiteInfo.site_category)
+    .filter(([_key, value]) => value)
+    .map(([key]) => categoryLabels[key]);
+
+const securityChecks = analyzeSecurityChecks(websiteInfo.security_checks);
+
+const risk = websiteInfo.risk_score.result;
+let riskText = 'unknown';
+if (risk < 5) riskText = 'safe';
+else if (risk < 15) riskText = 'moderately safe';
+else if (risk < 50) riskText = 'risky';
+else if (risk < 75) riskText = 'dangerous';
+else if (risk >= 75) riskText = 'very dangerous';
+
+const screenshotUrl = `https://screenshot-cache.as93.workers.dev/${url}`;
+
+let webCheckTarget: string;
+try {
+  webCheckTarget = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).host;
+} catch {
+  webCheckTarget = encodeURIComponent(url);
+}
+const webCheckLink = `https://web-check.xyz/check/${webCheckTarget}`;
+
+---
+
+<div class="website-info-wrapper">
+  <div class="left">
+    <h4>Website</h4>
+    <p class="website-title">
+      <img src={`https://favicone.com/${websiteInfo.url_parts.host}`} alt="" width="16" loading="lazy" />
+      {websiteInfo.web_page.title}
+    </p>
+    <p class="website-description">{websiteInfo.web_page.description}</p>
+    <h4>Redirects</h4>
+    {websiteInfo.redirection.found ? (
+      <p>
+        <FontAwesome iconName="redirectFound" />
+        Redirects to {websiteInfo.redirection.url}
+      </p>
+    ) : (
+      <p class="all-good">
+        <FontAwesome iconName="redirectNotFound" />
+        Does not redirect
+      </p>
+    )}
+    <h4>Security Checks</h4>
+    { securityChecks.failedChecks.length > 0 ? (
+      <>
+      <p class="explainer">
+        {securityChecks.failedChecks.length} security checks failed ({securityChecks.passedChecks.length} passed)
+      </p>
+      <ul>
+        {securityChecks.failedChecks.map((check) => (
+          <li class="all-bad">
+            <FontAwesome iconName="blacklistFound" /> {check}
+          </li>
+        ))}
+      </ul>
+      </>
+    ) : (
+      <p class="all-good">
+        <FontAwesome iconName="redirectNotFound" />
+        All {securityChecks.passedChecks.length} security checks passed
+      </p>
+    )}
+    <h4>Server Details</h4>
+    <ul class="list-table">
+      <li>
+        <span class="lbl">IP Address</span>
+        <span class="val">{websiteInfo.server_details.ip}</span>
+      </li>
+      {websiteInfo.server_details.hostname && (
+        <li>
+          <span class="lbl">Hostname</span>
+          <span class="val">{websiteInfo.server_details.hostname}</span>
+        </li>
+      )}
+      <li>
+        <span class="lbl">Location</span>
+        <span class="val">
+          {websiteInfo.server_details.city_name},
+          {websiteInfo.server_details.region_name},
+          {websiteInfo.server_details.country_name},
+          {websiteInfo.server_details.continent_code}
+        </span>
+      </li>
+      <li>
+        <span class="lbl">ISP</span>
+        <span class="val">{websiteInfo.server_details.isp}</span>
+      </li>
+      <li>
+        <span class="lbl">ASN</span>
+        <span class="val">{websiteInfo.server_details.asn}</span>
+      </li>
+    </ul>
+
+    {siteCategories.length > 0 && (
+      <h4>Categories</h4>
+      <p class="explainer">Some proxies may block this service, as it falls into the following categories</p>
+      <ul>
+        {siteCategories.map((category) => (
+          <li>{category}</li>
+        ))}
+      </ul>
+    )}
+    <h4>Associated Countries</h4>
+    <ul>
+      {websiteInfo.geo_location.countries.map((country) => (
+        <li>
+          <img width="16" src={`https://flagcdn.com/48x36/${country.toLowerCase()}.png`} alt={country} loading="lazy" />
+          {country}
+        </li>
+      ))}
+    </ul>
+    <h4>Safety Score</h4>
+    <p class="explainer">Website marked as {riskText}</p>
+    <div class={`risk risk-${riskText.replaceAll(' ', '-').toLocaleLowerCase()}`}>
+      <p>{100-risk}%</p>
+    </div>
+  </div>
+  <div class="right">
+    {trackers && (
+      <>
+      <h4>Trackers</h4>
+      { trackers.length > 0 ? (
+        <>
+        <p class="explainer">
+          Loads {trackers.length} third-party tracker{trackers.length === 1 ? '' : 's'}
+        </p>
+        <ul>
+          {trackers.map((tracker) => (
+            <li class="all-bad" title={tracker.categories.join(', ') || undefined}>
+              <FontAwesome iconName="warning" /> {tracker.domain}
+              {tracker.owner && <span class="tracker-owner">{tracker.owner}</span>}
+            </li>
+          ))}
+        </ul>
+        </>
+      ) : (
+        <p class="all-good">
+          <FontAwesome iconName="noTrackers" />
+          No known trackers found
+        </p>
+      )}
+      </>
+    )}
+    <h4>Blacklist Check</h4>
+    <p>{websiteInfo.url_parts.host} was found on <b>{websiteInfo.domain_blacklist.detections}</b> blacklists</p>
+    <ul>
+      {
+        websiteInfo.domain_blacklist.engines
+        .sort((a, b) => Number(b.detected) - Number(a.detected))
+        .map((engine) => (
+          engine.detected ? (
+            <li class="blacklist-check blacklisted">
+              <FontAwesome iconName="blacklistFound" />
+              {engine.name}
+            </li>
+          ) : (
+            <li class="blacklist-check not-blacklisted">
+              <FontAwesome iconName="blacklistNotFound" />
+              {engine.name}
+            </li>
+          )
+      ))}
+    </ul>
+    <h4>Website Preview</h4>
+    <img class="preview-shot" src={screenshotUrl} alt="Website preview" width="300" height="50" loading="lazy" />
+    <div class="link-to-web-check">
+      <Button url={webCheckLink} target="_blank" rel="noopener">
+      	<img width="32" height="32" src="/web-check.svg" alt="" loading="lazy" />
+       <div class="btn-text">
+      	  <span>View full report at</span>
+          <b class="web-check-title">web-check.xyz</b>
+       	</div>
+      </Button>
+    </div>
+
+  </div>
+</div>
+
+
+<style lang="scss">
+@use '../../styles/mixins' as *;
+.website-info-wrapper {
+  @include detail-info-layout;
+}
+
+@include detail-info-base;
+
+  p {
+    &.all-good {
+      :global(svg) {
+        color: var(--rating-a);
+      }
+    }
+    &.all-bad {
+      :global(svg) {
+        color: var(--rating-g);
+      }
+    }
+  }
+  li {
+    :global(svg) {
+      width: var(--text-base);
+    }
+
+    &.not-blacklisted :global(svg) { color: var(--rating-a); }
+    &.blacklisted :global(svg), &.all-bad :global(svg) { color: var(--rating-g); }
+
+  }
+  ul {
+    .list-item {
+      .date-block {
+        font-size: var(--text-sm);
+        opacity: var(--opacity-soft);
+      }
+    }
+    &.list-table li {
+      .lbl {
+        font-weight: 500;
+      }
+    }
+  }
+
+  .website-title, .website-description {
+    font-size: var(--text-sm);
+    opacity: var(--opacity-subtle);
+    @include line-clamp(1);
+    border-left: 2px solid var(--accent-3);
+    padding-left: var(--space-sm);
+  }
+  .website-title {
+    font-weight: 500;
+  }
+  .website-description {
+    font-style: italic;
+    -webkit-line-clamp: 3;
+  }
+  .explainer {
+    font-size: var(--text-sm);
+    opacity: var(--opacity-subtle);
+    font-style: italic;
+  }
+  .tracker-owner {
+    margin-left: var(--space-xs);
+    font-size: var(--text-sm);
+    opacity: var(--opacity-soft);
+  }
+
+  .risk {
+    font-size: var(--text-3xl);
+    width: fit-content;
+    padding: var(--space-sm) var(--space-sm);
+    border-radius: var(--curve-lg);
+    border: 4px solid;
+    margin: var(--space-sm) 0;
+    font-weight: bold;
+
+    &.risk-unknown { --rating-color: var(--rating-unknown); }
+    &.risk-safe { --rating-color: var(--rating-a); }
+    &.risk-moderately-safe { --rating-color: var(--rating-c); }
+    &.risk-risky { --rating-color: var(--rating-e); }
+    &.risk-dangerous { --rating-color: var(--rating-f); }
+    &.risk-very-dangerous { --rating-color: var(--rating-g); }
+    color: var(--rating-color);
+    border-color: var(--rating-color);
+  }
+
+  .preview-shot {
+    width: 95%;
+    height: auto;
+    border-radius: var(--curve-sm);
+    border: 2px solid var(--accent-3);
+    margin: var(--space-sm) auto;
+    display: flex;
+  }
+
+  .link-to-web-check {
+    width: 260px;
+    float: right;
+    font-size: var(--text-base);
+    transform: scale(0.8);
+    transition: var(--transition-normal);
+    :global(.button) {
+      background: var(--accent-3);
+    }
+    :global(.button a) {
+      color: var(--accent-3-fg);
+    }
+    span {
+      font-size: var(--text-sm);
+    }
+    .web-check-title {
+      font-size: var(--text-lg);
+    }
+    :global(a) {
+    	display: flex;
+      gap: var(--space-md);
+    	.btn-text {
+	    	display: flex;
+	     	flex-direction: column;
+				text-align: left;
+     	}
+    }
+  }
+
+</style>

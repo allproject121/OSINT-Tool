@@ -1,0 +1,187 @@
+---
+import type { PrivacyPolicyResponse } from '@utils/fetch-privacy-policy';
+
+import { formatDate, timeAgo } from '@utils/dates-n-stuff';
+import FontAwesome from "@components/form/FontAwesome.svelte"
+
+
+interface Props {
+  privacyData: PrivacyPolicyResponse;
+}
+
+const { privacyData } = Astro.props;
+
+const priv = privacyData?.parameters;
+
+const getIconName = (clasification: string) => {
+  if (clasification === 'good') return 'faceGood';
+  if (clasification === 'neutral') return 'faceMeh';
+  if (clasification === 'bad') return 'faceBad';
+  return '';
+}
+
+// If two or more objects in privacyPolicy.points have the same title, remove the duplicates
+const removeDuplicates = () => {
+  const seen = new Set();
+  return priv.points = (priv.points || []).filter((point) => {
+    if (seen.has(point.title)) {
+      return false;
+    }
+    seen.add(point.title);
+    return true;
+  });
+}
+
+---
+
+{priv && (
+<div class="privacy-policy-wrapper">
+  
+  {(priv.points && priv.points.length) > 0 && (
+    <div class="left">
+      <h4>Privacy Policy Summary</h4>
+      <ul class="no-point">
+        {removeDuplicates().map((point) => (
+          <li class={`clasification ${point.case.classification}`}>
+            <FontAwesome iconName={getIconName(point.case.classification)} />
+            {point.title}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )}
+  
+  <div class="right">
+    { priv.rating && (
+      <h4>Score</h4>
+      <div class={`rating rating-${priv.rating}`}>
+        <p>{priv.rating}</p>
+      </div>
+    )}
+    {priv.documents && priv.documents.length > 0 && (
+      <h4>Documents</h4>
+      <ul>
+        {(priv.documents || []).map((document) => (
+          <li class="list-item">
+            <a href={document.url} target="_blank">{document.name}</a>
+            <div class="date-block">
+              Created {formatDate(document.created_at)},
+              Last modified {timeAgo(document.updated_at)}
+            </div>
+          </li>
+        ))}
+      </ul>
+    )}
+    {priv.urls && priv.urls.length > 1 && (
+      <h4>Domains Covered by Policy</h4>
+      <ul>
+        {priv.urls.map((url) => (
+          <li>{url}</li>
+        ))}
+      </ul>
+    )}
+    {priv.points && priv.points.length > 0 && (
+      <h4>About the Data</h4>
+      <p class="about-tosdr">
+        This data is kindly provided by <a href="https://tosdr.org/" target="_blank" rel="noopener noreferrer">tosdr.org</a>.
+        Read full report at: <a href={`https://tosdr.org/en/service/${priv.id}`} target="_blank" rel="noopener noreferrer">#{priv.id}</a>
+      
+        </p>
+    )}
+  </div>
+</div>
+)}
+
+<style lang="scss">
+
+.privacy-policy-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-md);
+  .left, .right {
+    width: calc(50% - 1rem);
+    @media screen and (max-width: 768px){
+      width: 100%;
+    }
+  }
+}
+
+h4 {
+    margin: var(--space-md) 0 0 0;
+    font-size: var(--text-md);
+  }
+  p {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    :global(svg) {
+      width: var(--text-base);
+    }
+    img {
+      border-radius: var(--curve-sm);
+    }
+  }
+  li {
+    :global(svg) {
+      width: var(--text-base);
+      margin-right: 0.2rem;
+    }
+    &.clasification {
+      &.good :global(svg) { color: var(--rating-a); }
+      &.neutral :global(svg) { color: var(--rating-neutral); }
+      &.bad :global(svg) { color: var(--rating-g); }
+    }
+  }
+  ul {
+    padding-left: var(--space-md);
+    list-style: circle;
+    max-height: 700px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    img {
+      border-radius: var(--curve-sm);
+    }
+    .list-item {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: var(--space-sm);
+      .date-block {
+
+        font-size: var(--text-sm);
+        opacity: var(--opacity-soft);
+      }
+    }
+    &.no-point {
+      list-style: none;
+      padding-left: var(--space-xs);
+    }
+  }
+
+  .rating {
+    font-size: 4rem;
+    width: fit-content;
+    padding: var(--space-sm) 1.5rem;
+    border-radius: var(--curve-lg);
+    border: 4px solid;
+    margin: 0 auto;
+    font-weight: bold;
+
+    &.rating-A { --rating-color: var(--rating-a); }
+    &.rating-B { --rating-color: var(--rating-b); }
+    &.rating-C { --rating-color: var(--rating-c); }
+    &.rating-D { --rating-color: var(--rating-d); }
+    &.rating-E { --rating-color: var(--rating-e); }
+    &.rating-F { --rating-color: var(--rating-f); }
+    &.rating-G { --rating-color: var(--rating-g); }
+    color: var(--rating-color);
+    border-color: var(--rating-color);
+  }
+
+  .about-tosdr {
+    display: inline;
+    font-size: var(--text-sm);
+    opacity: var(--opacity-soft);
+  }
+</style>

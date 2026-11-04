@@ -1,0 +1,68 @@
+# When a new tag is created, this workflow will open a PR
+# to update the demo branch with the latest code from the main branch
+
+name: "🎈 Update Demo"
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  create-demo-PR:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set TAG environment variable
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
+
+      - name: Checkout demo branch
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.BOT_TOKEN }}
+          fetch-depth: 0
+          ref: demo
+
+      - name: Merge main into demo
+        run: |
+          # Configure Git to commit as your bot
+          git config user.name "liss-bot"
+          git config user.email "alicia-gh-bot@mail.as93.net"
+
+          # Fetch main and merge it into local demo
+          git fetch origin main
+          git merge origin/main --no-edit
+          # If there's a merge conflict, the job will fail unless you handle it
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.BOT_TOKEN }}
+          base: demo
+          branch: "bot/update-demo"
+          author: "liss-bot <alicia-gh-bot@mail.as93.net>"
+          committer: "liss-bot <alicia-gh-bot@mail.as93.net>"
+          title: "Update Demo Branch from Main"
+          body: |
+            A new version of Domain Locker has been released (**${{ env.TAG }}**)!
+
+            🤖 This PR will merge **`main`** → **`demo`**, updating the demo environment to version ${{ env.TAG }}.
+            [Click here](https://github.com/${{ github.repository }}/compare/demo...main) to view changes.
+
+            <details>
+            <summary>🔍 View Context</summary>
+
+            - Repository: [${{ github.repository }}](https://github.com/${{ github.repository }})
+            - Tag Reference: ${{ github.ref }}
+            - Tag Name: [${{ env.TAG }}](https://github.com/${{ github.repository }}/releases/tag/${{ env.TAG }})
+            - Workflow Run: [`${{ github.run_id }}`](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - Commit SHA: ${{ github.sha }}
+
+            </details>
+
+            > [!NOTE]
+            > Merging this PR will incorporate the latest changes from main
+            > into the demo branch, which will promote the latest updates to the demo environment,
+            > deploying it to [demo.domain-locker.com](https://demo.domain-locker.com).
+            > Ensure you've reviewed all changes before continuing with the merge.

@@ -1,0 +1,556 @@
+"""Checks project health: URL reachability, GitHub repo stars, activity, and author match."""
+
+import json
+import logging
+import os
+import re
+import sys
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlparse
+
+import yaml
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import utils
+
+utils.setup_logging()
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DATA_PATH = os.path.join(PROJECT_ROOT, "awesome-privacy.yml")
+DIFF_PATH = "/tmp/pr-diff.json"
+FINDINGS_PATH = "/tmp/findings-project.json"
+
+TIMEOUT = 10
+USER_AGENT = "awesome-privacy-ci/1.0"
+# Reachable but blocking automated probes (bot-block/rate-limit), not a missing page.
+SOFT_HTTP = {401, 403, 405, 406, 429}
+MIN_STARS = 100
+INACTIVE_DAYS = 90
+MIN_AGE_DAYS = 120
+AI_COMMIT_RATIO = 0.8
+BUS_FACTOR_RATIO = 0.96
+SPAM_AWESOME_THRESHOLD = 3
+SPAM_DISTINCT_REPO_THRESHOLD = 7
+SPAM_WINDOW_DAYS = 2
+NEW_ACCOUNT_DAYS = 14
+TRACKER_LIMIT = 2
+POOR_PRIVACY_GRADES = {"D", "E"}
+# The API fetches and scans the page itself, so allow it longer to respond
+TRACKERS_TIMEOUT = 30
+# Code hosts and app stores, whose trackers belong to the platform rather than the project
+PLATFORM_HOSTS = ("github.com", "gitlab.com", "codeberg.org", "play.google.com",
+                  "apps.apple.com", "addons.mozilla.org", "chromewebstore.google.com")
+
+SESSION = utils.make_session(user_agent=USER_AGENT)
+API_TOKEN = os.environ.get("API_TOKEN", "")
+
+LINK_MSG = (
+    "The link(s) you included seem to be returning a 404."
+    " Please double check all URLs listed are valid and publicly accessible"
+)
+AUTHOR_MSG = (
+    "Looks like you are the author of this package. Please ensure that you"
+    " have clearly disclosed this in your PR body for transparency"
+)
+STARS_MSG = (
+    "It looks like your submission is quite a small project without a lot of users yet."
+    " In some circumstances we may ask you to resubmit this once the project"
+    " is more mature and has a proven track record of good practices and maintenance."
+)
+ACTIVITY_MSG = (
+    "Please confirm that the project you are adding is actively maintained,"
+    " as it looks to not have had any recent updates in the past 3 months."
+)
+MATURITY_MSG = (
+    "This project appears to be quite new (created less than 4 months ago)."
+    " Repositories should have a proven track record before listing,"
+    " and at least 16 weeks since first stable release."
+)
+AI_CODE_MSG = (
+    "This project appears to contain AI-generated code."
+    " Additional care will be needed when reviewing the submission."
+)
+FORK_MSG = (
+    "The GitHub link in this listing is a fork."
+    " Please confirm it's the correct (and actively maintained) repository"
+)
+LICENSE_MSG = (
+    "There doesn't appear to be a license included in the project's GitHub repo"
+)
+ARCHIVED_MSG = (
+    "The GitHub project linked has been archived."
+    " Additions must be actively maintained"
+)
+SECURITY_MSG = (
+    "This project has published security advisories (critical or high severity)"
+    " with no patched version listed. Please verify these have been addressed"
+)
+SPAM_AWESOME_MSG = (
+    "You have made many similar submissions on other awesome-* repos today."
+    " Please ensure that your submission is actually a good fit for awesome-privacy"
+)
+SPAM_MANY_MSG = (
+    "The submitter of this PR appears to have been previously flagged as a spammer."
+    " Caution is needed when reviewing this PR"
+)
+NEW_ACCOUNT_MSG = (
+    "This user has only just joined GitHub."
+    " New accounts submitting to awesome lists can be a spam signal, careful review needed"
+)
+DUPLICATE_URL_MSG = (
+    "The URL for this submission already exists in another listing."
+    " Please check that this is not a duplicate entry"
+)
+REPO_404_MSG = (
+    "The GitHub repository linked in this submission returns a 404."
+    " Please ensure the repo exists and is publicly accessible"
+)
+BUS_FACTOR_MSG = (
+    "This repository has a low bus factor, as maintained by a single contributor"
+)
+SECURITY_POLICY_MSG = (
+    "This repository has neither a security policy nor private"
+    " vulnerability reporting enabled, so there's no clear way to report security issues"
+)
+TRACKERS_MSG = (
+    "The Android app contains multiple known trackers, according to Exodus Privacy."
+    " Please confirm these are justified"
+)
+DEGOOGLED_MSG = (
+    "The Android app is reported as broken on de-Googled Android"
+    " (without Google Play Services), according to Plexus"
+)
+PRIVACY_GRADE_MSG = (
+    "The privacy policy for this service is graded as poor by ToS;DR,"
+    " indicating serious privacy concerns"
+)
+WEB_TRACKERS_MSG = (
+    "The website appears to load third-party trackers ({})"
+)
+
+
+def load_diff(path):
+    """Load the diff JSON, returning None on any error."""
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def check_url(url):
+    """Return True if reachable. Transport errors and bot-block/rate-limit statuses
+    (SOFT_HTTP) count as reachable; only a real bad status (404, 5xx, ...) fails."""
+    ok, status = utils.check_url(url, SESSION, TIMEOUT)
+    if ok or status is None or status in SOFT_HTTP:
+        return True
+    logger.warning("URL check failed for %s (HTTP %d)", url, status)
+    return False
+
+
+def _gh_get(path, token, params=None, label=""):
+    """GET a GitHub API endpoint. Returns parsed JSON on 200, None otherwise."""
+    return utils.gh_get(path, token, session=SESSION, params=params, timeout=TIMEOUT, label=label)
+
+
+def load_yaml_data():
+    """Load the head YAML, returning None on any error."""
+    try:
+        with open(DATA_PATH) as f:
+            return yaml.safe_load(f)
+    except Exception:
+        return None
+
+
+def find_service_in_head(head, category, section, service_name):
+    """Look up a service in the head YAML by path."""
+    if not head:
+        return None
+    for cat in head.get("categories", []):
+        if cat.get("name") == category:
+            for sec in cat.get("sections", []):
+                if sec.get("name") == section:
+                    for svc in sec.get("services", []):
+                        if svc.get("name") == service_name:
+                            return svc
+    return None
+
+
+def get_services(diff, key):
+    """Safely extract a service list from the diff."""
+    return diff.get("services", {}).get(key, [])
+
+
+def check_links(diff, head):
+    """Return LINK_MSG if any service URL or icon URL is unreachable."""
+    for svc in get_services(diff, "added"):
+        fields = svc.get("fields", {})
+        url = fields.get("url")
+        if url and not check_url(url):
+            return LINK_MSG
+        icon = fields.get("icon")
+        if icon and not check_url(icon):
+            return LINK_MSG
+    for svc in get_services(diff, "modified"):
+        changed = svc.get("changed_fields", [])
+        if "url" not in changed and "icon" not in changed:
+            continue
+        head_svc = find_service_in_head(
+            head, svc["category"], svc["section"], svc["service"]
+        )
+        if head_svc:
+            if "url" in changed:
+                url = head_svc.get("url")
+                if url and not check_url(url):
+                    return LINK_MSG
+            if "icon" in changed:
+                icon = head_svc.get("icon")
+                if icon and not check_url(icon):
+                    return LINK_MSG
+    return None
+
+
+def check_ai_commits(owner, repo, token):
+    """Return AI_CODE_MSG if recent commits contain significant AI bot activity."""
+    commits = _gh_get(f"/repos/{owner}/{repo}/commits", token,
+                      params={"per_page": 100}, label="commits")
+    if not commits:
+        return None
+    bot_set = {a.lower() for a in utils.AI_BOT_AUTHORS}
+    count = sum(1 for c in commits if utils.commit_has_bot(c, bot_set))
+    if count / len(commits) >= AI_COMMIT_RATIO:
+        return AI_CODE_MSG
+    return None
+
+
+def check_security_alerts(owner, repo):
+    """Return SECURITY_MSG if the repo has unpatched critical/high security advisories."""
+    try:
+        report = utils.fetch_security_report(owner, repo, API_TOKEN, session=SESSION,
+                                             timeout=TIMEOUT, label=f"{owner}/{repo}")
+        if utils.unpatched_advisories(report)[1]:
+            return SECURITY_MSG
+    except Exception as exc:
+        logger.warning("check_security_alerts error for %s/%s: %s", owner, repo, exc)
+    return None
+
+
+def check_bus_factor(owner, repo, token):
+    """Return BUS_FACTOR_MSG if a single human contributor made nearly all commits."""
+    share = utils.top_contributor_share(owner, repo, token, session=SESSION, timeout=TIMEOUT)
+    if share is not None and share >= BUS_FACTOR_RATIO:
+        return BUS_FACTOR_MSG
+    return None
+
+
+def check_security_policy(owner, repo, token):
+    """Return SECURITY_POLICY_MSG if the repo has no security policy or private reporting."""
+    if utils.has_security_contact(owner, repo, token, session=SESSION, timeout=TIMEOUT) is False:
+        return SECURITY_POLICY_MSG
+    return None
+
+
+def check_android_app(pkg):
+    """Return findings for an Android app with multiple trackers or broken de-Googled support."""
+    findings = []
+    try:
+        app = utils.fetch_android_app(pkg, API_TOKEN, session=SESSION, timeout=TIMEOUT, label=pkg)
+        if (utils.tracker_count(app) or 0) >= TRACKER_LIMIT:
+            findings.append(TRACKERS_MSG)
+        if utils.degoogled_status(app) == "broken":
+            findings.append(DEGOOGLED_MSG)
+    except Exception as exc:
+        logger.warning("check_android_app error for %s: %s", pkg, exc)
+    return findings
+
+
+def check_privacy_grade(tosdr_id):
+    """Return PRIVACY_GRADE_MSG if the service's ToS;DR grade is poor."""
+    try:
+        policy = utils.fetch_privacy(tosdr_id, API_TOKEN, session=SESSION, timeout=TIMEOUT,
+                                     label=str(tosdr_id))
+        if utils.privacy_grade(policy) in POOR_PRIVACY_GRADES:
+            return PRIVACY_GRADE_MSG
+    except Exception as exc:
+        logger.warning("check_privacy_grade error for %s: %s", tosdr_id, exc)
+    return None
+
+
+def _is_platform(url):
+    """True if a URL is on a code host or app store, rather than the project's own site."""
+    host = (urlparse(url).hostname or "").lower()
+    return any(host == h or host.endswith(f".{h}") for h in PLATFORM_HOSTS)
+
+
+def check_website_trackers(url):
+    """Return WEB_TRACKERS_MSG naming the third-party trackers the website loads."""
+    try:
+        if _is_platform(url):
+            logger.info("Tracker check skipped for %s (not the project's own site)", url)
+            return None
+        report = utils.fetch_trackers(url, API_TOKEN, session=SESSION,
+                                      timeout=TRACKERS_TIMEOUT, label=url)
+        if not report:
+            return None
+        if _is_platform(report.get("finalUrl", "")):
+            logger.info("Tracker check skipped for %s (redirects to %s)", url, report["finalUrl"])
+            return None
+        domains = [t["domain"] for t in report.get("trackers", [])]
+        logger.info("Website trackers on %s: %s", url, ", ".join(domains) or "none found")
+        return WEB_TRACKERS_MSG.format(", ".join(domains)) if domains else None
+    except Exception as exc:
+        logger.warning("check_website_trackers error for %s: %s", url, exc)
+        return None
+
+
+def check_privacy_signals(diff):
+    """Check website trackers, Android trackers, de-Googled support and ToS;DR grade for additions."""
+    findings = []
+    for svc in get_services(diff, "added"):
+        fields = svc.get("fields", {})
+        if fields.get("url"):
+            findings.append(check_website_trackers(fields["url"]))
+        if fields.get("androidApp"):
+            findings.extend(check_android_app(fields["androidApp"]))
+        if fields.get("tosdrId"):
+            findings.append(check_privacy_grade(fields["tosdrId"]))
+    return [f for f in dict.fromkeys(findings) if f]
+
+
+def check_spam_prs(pr_user, token):
+    """Return list of spam findings based on recent PR activity."""
+    if not pr_user:
+        logger.warning("check_spam_prs skipped: no PR_USER")
+        return []
+    try:
+        since = (datetime.now(timezone.utc) - timedelta(days=SPAM_WINDOW_DAYS)).strftime("%Y-%m-%d")
+        data = _gh_get("/search/issues", token,
+                       params={"q": f"type:pr author:{pr_user} created:>={since}", "per_page": 100},
+                       label="spam")
+        if not data:
+            return []
+        items = data.get("items", [])
+        logger.info("check_spam_prs: %d total PRs for %s (fetched %d)",
+                     data.get("total_count", 0), pr_user, len(items))
+        this_repo = os.environ.get("GITHUB_REPOSITORY", "Lissy93/awesome-privacy").lower()
+        awesome_count = 0
+        distinct_repos = set()
+        for item in items:
+            repo_url = item.get("repository_url", "")
+            # repository_url looks like https://api.github.com/repos/owner/repo-name
+            repo_full = "/".join(repo_url.rstrip("/").split("/")[-2:]).lower()
+            if repo_full == this_repo:
+                continue
+            distinct_repos.add(repo_full)
+            repo_name = repo_url.rstrip("/").split("/")[-1].lower()
+            if repo_name.startswith("awesome-"):
+                awesome_count += 1
+        logger.info("check_spam_prs: %d awesome-* PRs, %d distinct repos",
+                     awesome_count, len(distinct_repos))
+        findings = []
+        if awesome_count >= SPAM_AWESOME_THRESHOLD:
+            findings.append(SPAM_AWESOME_MSG)
+        if len(distinct_repos) >= SPAM_DISTINCT_REPO_THRESHOLD:
+            findings.append(SPAM_MANY_MSG)
+        return findings
+    except Exception as exc:
+        logger.warning("check_spam_prs error for %s: %s", pr_user, exc)
+        return []
+
+
+def check_new_account(pr_user, token):
+    """Return NEW_ACCOUNT_MSG if the PR author's GitHub account is very new."""
+    if not pr_user:
+        return None
+    data = _gh_get(f"/users/{pr_user}", token, label="user")
+    if not data:
+        return None
+    created = data.get("created_at")
+    if not created:
+        return None
+    try:
+        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        if (datetime.now(timezone.utc) - created_dt).days < NEW_ACCOUNT_DAYS:
+            return NEW_ACCOUNT_MSG
+    except Exception:
+        pass
+    return None
+
+
+def check_duplicate_urls(diff, head):
+    """Return DUPLICATE_URL_MSG if an added service's URL already exists in the YAML."""
+    if not head:
+        return None
+    # Count how many times each URL appears in the head YAML
+    url_counts = {}
+    for cat in head.get("categories", []):
+        for sec in cat.get("sections", []):
+            for svc in sec.get("services", []):
+                url = svc.get("url", "").rstrip("/").lower()
+                if url:
+                    url_counts[url] = url_counts.get(url, 0) + 1
+    # The added service is in head already, so a count > 1 means a duplicate exists
+    for svc in get_services(diff, "added"):
+        url = svc.get("fields", {}).get("url", "").rstrip("/").lower()
+        if url and url_counts.get(url, 0) > 1:
+            return DUPLICATE_URL_MSG
+    return None
+
+
+_DISCLOSURE_RE = re.compile(
+    r"i am the author|i'm the author|my project|i created|i develop"
+    r"|i maintain|i built|my own project|i made|author of|maintainer of",
+    re.IGNORECASE,
+)
+
+
+def _pr_discloses_authorship(pr_body):
+    """Return True if the PR body already discloses the submitter is the author."""
+    return bool(pr_body and _DISCLOSURE_RE.search(pr_body))
+
+
+def check_repo_exists(diff, token):
+    """Return REPO_404_MSG if an added service's GitHub repo returns a 404."""
+    seen = set()
+    for svc in get_services(diff, "added"):
+        owner, repo = utils.parse_github_field(svc.get("fields", {}).get("github"))
+        if not owner or (owner, repo) in seen:
+            continue
+        seen.add((owner, repo))
+        if utils.repo_status(owner, repo, token, session=SESSION) == 404:
+            return {"msg": REPO_404_MSG, "level": "error"}
+    return None
+
+
+def check_repo_signals(diff, pr_user, token, pr_body=""):
+    """Check GitHub repo author match, stars, and activity for added services."""
+    findings = []
+    cache = {}
+    for svc in get_services(diff, "added"):
+        gh = svc.get("fields", {}).get("github")
+        owner, repo = utils.parse_github_field(gh)
+        if not owner:
+            continue
+        cache_key = f"{owner}/{repo}"
+        if cache_key not in cache:
+            cache[cache_key] = utils.fetch_repo(owner, repo, token, session=SESSION)
+        data = cache[cache_key]
+        if not data:
+            continue
+
+        repo_owner = data.get("owner", {})
+        if (
+            pr_user
+            and repo_owner.get("type") == "User"
+            and repo_owner.get("login", "").lower() == pr_user.lower()
+            and AUTHOR_MSG not in findings
+            and not _pr_discloses_authorship(pr_body)
+        ):
+            findings.append(AUTHOR_MSG)
+
+        stars = data.get("stargazers_count", 0)
+        if stars < MIN_STARS and STARS_MSG not in findings:
+            findings.append(STARS_MSG)
+
+        if data.get("fork") and FORK_MSG not in findings:
+            findings.append(FORK_MSG)
+
+        if not data.get("license") and LICENSE_MSG not in findings:
+            findings.append(LICENSE_MSG)
+
+        if data.get("archived") and ARCHIVED_MSG not in findings:
+            findings.append(ARCHIVED_MSG)
+
+        pushed = data.get("pushed_at")
+        if pushed and ACTIVITY_MSG not in findings:
+            try:
+                pushed_dt = datetime.fromisoformat(pushed.replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                if (now - pushed_dt).days > INACTIVE_DAYS:
+                    findings.append(ACTIVITY_MSG)
+            except Exception:
+                pass
+
+        created = data.get("created_at")
+        if created and MATURITY_MSG not in findings:
+            try:
+                created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                if (now - created_dt).days < MIN_AGE_DAYS:
+                    findings.append(MATURITY_MSG)
+            except Exception:
+                pass
+
+        if AI_CODE_MSG not in findings:
+            finding = check_ai_commits(owner, repo, token)
+            if finding:
+                findings.append(finding)
+
+        if SECURITY_MSG not in findings:
+            finding = check_security_alerts(owner, repo)
+            if finding:
+                findings.append(finding)
+
+        if BUS_FACTOR_MSG not in findings:
+            finding = check_bus_factor(owner, repo, token)
+            if finding:
+                findings.append(finding)
+
+        if SECURITY_POLICY_MSG not in findings:
+            finding = check_security_policy(owner, repo, token)
+            if finding:
+                findings.append(finding)
+
+    return findings
+
+
+def main():
+    findings = []
+    try:
+        pr_user = os.environ.get("PR_USER", "")
+        token = os.environ.get("GITHUB_TOKEN", "")
+        logger.info("Checking project health: links, spam, account age, duplicate URLs, privacy, repo signals")
+        logger.info("PR_USER=%s, GITHUB_TOKEN=%s", pr_user or "(empty)", "present" if token else "MISSING")
+
+        diff = load_diff(DIFF_PATH)
+        if not diff:
+            logger.info("No diff file at %s, nothing to check", DIFF_PATH)
+            with open(FINDINGS_PATH, "w") as f:
+                json.dump(findings, f)
+            sys.exit(0)
+
+        head = load_yaml_data()
+        finding = check_links(diff, head)
+        if finding:
+            findings.append(finding)
+
+        pr_body = os.environ.get("PR_BODY", "")
+
+        findings.extend(check_spam_prs(pr_user, token))
+
+        finding = check_new_account(pr_user, token)
+        if finding:
+            findings.append(finding)
+
+        finding = check_duplicate_urls(diff, head)
+        if finding:
+            findings.append(finding)
+
+        finding = check_repo_exists(diff, token)
+        if finding:
+            findings.append(finding)
+
+        findings.extend(check_privacy_signals(diff))
+        findings.extend(check_repo_signals(diff, pr_user, token, pr_body))
+    except Exception as exc:
+        logger.error("Unhandled error in main: %s", exc, exc_info=True)
+
+    logger.info("Project health: %d finding(s), writing to %s", len(findings), FINDINGS_PATH)
+    with open(FINDINGS_PATH, "w") as f:
+        json.dump(findings, f)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

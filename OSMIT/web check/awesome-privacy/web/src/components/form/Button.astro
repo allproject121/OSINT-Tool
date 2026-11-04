@@ -1,0 +1,29 @@
+---
+const { text, url, className, title, target, rel } = Astro.props;
+---
+
+<div class={`button ${className || ''}`} title={title}>
+	<a href={url} target={target} rel={rel}>{text}<slot /></a>
+</div>
+
+<style lang="scss">
+	.button {
+		font-family: var(--font-subtitle);
+		text-align: center;
+		border: var(--border-light);
+		box-shadow: var(--shadow-sm);
+		background: var(--accent);
+		border-radius: var(--curve-pill);
+		padding: var(--space-sm) var(--space-md);
+		transition: var(--transition-normal);
+		&:hover {
+			box-shadow: var(--shadow-sm-hover);
+		}
+		a {
+			text-decoration: none;
+			color: var(--accent-fg);
+			font-size: var(--text-md);
+			font-weight: bold;
+		}
+	}
+</style>

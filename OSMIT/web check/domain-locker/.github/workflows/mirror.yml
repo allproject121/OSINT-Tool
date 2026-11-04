@@ -1,0 +1,26 @@
+# Weekly sync of source GitHub repo over to our Codeberg mirror
+
+name: 🪞 Mirror to Codeberg
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 2 * * 0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-codeberg
+  cancel-in-progress: false
+
+jobs:
+  codeberg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: lissy93/repo-mirror-action@v1.5.0
+        with:
+          ssh_key: ${{ secrets.CODEBERG_SSH }}
+          host: git@codeberg.org
+          user: alicia
+          repo: domain-locker
+          force_push: true

@@ -1,0 +1,78 @@
+<div class="card max-w-3xl mx-auto p-card">
+  <div class="p-4 flex flex-column gap-4">
+    <div>
+      <h2 class="text-2xl m-0">Database Connection</h2>
+      <p class="opacity-70 mt-2 mb-0">
+        View and configure which database the backend API is using.
+      </p>
+    </div>
+
+    <div class="flex flex-column gap-2 bg-surface-25 p-2 rounded">
+      <div class="flex justify-content-between align-items-center">
+        <span class="font-semibold">Data source</span>
+        <p-tag
+          [value]="serviceType === 'supabase' ? 'Supabase' : (backend ?? serviceType)"
+          [severity]="serviceType === 'error' ? 'danger' : 'success'"
+        />
+      </div>
+      <p class="m-0 opacity-70 text-sm">
+        @switch (backend) {
+          @case ('postgres') {
+            Configured with the <code>DL_PG_*</code> environment variables.
+          }
+          @case ('sqlite') {
+            Stored in a file on the server, set with <code>DL_SQLITE_PATH</code>.
+          }
+          @default {
+            Managed instance, backed by Supabase.
+          }
+        }
+      </p>
+    </div>
+
+    @if (infoRows.length) {
+      <div class="flex flex-column gap-2">
+        <span class="font-semibold">Details</span>
+        @for (row of infoRows; track row.label) {
+          <div class="flex justify-content-between align-items-start gap-3 text-sm">
+            <span class="opacity-70">{{ row.label }}</span>
+            <span class="text-right break-all font-mono">{{ row.value }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    @if (leftoverCredentials.length) {
+      <p-messages severity="warn">
+        <ng-template pTemplate>
+          <div class="flex flex-column gap-2 w-full">
+            <span>
+              This browser still holds database credentials saved by an older version.
+              They are no longer used, and should be removed.
+            </span>
+            <ul class="m-0 pl-3">
+              @for (credential of leftoverCredentials; track credential.key) {
+                <li>{{ credential.label }}</li>
+              }
+            </ul>
+            <div>
+              <p-button
+                label="Remove stored credentials"
+                severity="warning"
+                size="small"
+                (onClick)="clearLegacyCredentials()"
+              />
+            </div>
+          </div>
+        </ng-template>
+      </p-messages>
+    }
+
+    <p class="m-0 opacity-70 text-sm">
+      To change database, update the environment variables on the server and restart. See
+      the
+      <a href="/about/self-hosting" class="text-primary">self-hosting docs</a>
+      for the full list.
+    </p>
+  </div>
+</div>

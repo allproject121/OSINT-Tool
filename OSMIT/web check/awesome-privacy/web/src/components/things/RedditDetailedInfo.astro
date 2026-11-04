@@ -1,0 +1,145 @@
+---
+import type { RedditData } from '@utils/fetch-reddit-info';
+import { timestampToDate } from '@utils/dates-n-stuff';
+
+interface Props {
+	redditData: RedditData;
+}
+
+const { redditData } = Astro.props;
+---
+
+<div class="reddit-info-wrapper">
+	<div class="left">
+		<h3>Reddit</h3>
+		<p class="website-title">
+			<img src={redditData.info.icon} alt="" width="16" loading="lazy" />
+			{redditData.info.title || redditData.info.name}
+		</p>
+		<p class="website-description">{redditData.info.description}</p>
+		{
+			redditData.info.banner && (
+				<img
+					class="banner"
+					width="300"
+					src={redditData.info.banner}
+					alt="Banner"
+					loading="lazy"
+				/>
+			)
+		}
+		<ul class="list-table">
+			{
+				redditData.info.dateCreated && (
+					<li>
+						<span class="lbl">Created at</span>
+						<span class="val">
+							{timestampToDate(redditData.info.dateCreated * 1000)}
+						</span>
+					</li>
+				)
+			}
+			<li>
+				<span class="lbl">Members</span>
+				<span class="val">{redditData.info.subscribers}</span>
+			</li>
+			<li>
+				<span class="lbl">Join</span>
+				<span class="val"
+					><a href={`https://reddit.com/${redditData.info.name}`}
+						>{redditData.info.name}</a
+					></span
+				>
+			</li>
+		</ul>
+	</div>
+	<div class="right">
+		<h4>Posts</h4>
+		<ul class="posts">
+			{
+				redditData.posts.map((post) => (
+					<li title={post.body}>
+						○{' '}
+						<a href={post.url} target="_blank">
+							{post.title}
+						</a>
+						<span class="votes">
+							(▲ {post.upVotes} ▼ {post.downVotes})
+						</span>
+					</li>
+				))
+			}
+		</ul>
+	</div>
+</div>
+
+<style lang="scss">
+	@use '../../styles/mixins' as *;
+	.reddit-info-wrapper {
+		@include detail-info-layout;
+	}
+
+	@include detail-info-base;
+
+	.banner {
+		margin: var(--space-sm) auto;
+		border-radius: var(--curve-md);
+		width: 100%;
+	}
+
+	h3 {
+		margin: 0 0 var(--space-md) 0;
+		font-size: var(--text-xl);
+	}
+
+	ul {
+		&.list-table li {
+			.lbl {
+				font-weight: 400;
+			}
+		}
+	}
+
+	.posts {
+		list-style: circle;
+		padding-left: var(--space-md);
+		font-size: var(--text-sm);
+		li {
+			display: -webkit-box;
+			-webkit-line-clamp: 1;
+			-webkit-box-orient: vertical;
+			overflow: hidden;
+			a {
+				max-width: 80%;
+			}
+			.votes {
+				font-size: var(--text-sm);
+				opacity: var(--opacity-dim);
+			}
+		}
+	}
+
+	.website-title,
+	.website-description {
+		font-size: var(--text-sm);
+		opacity: var(--opacity-subtle);
+		display: -webkit-box;
+		-webkit-line-clamp: 1;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+		border-left: 2px solid var(--accent-3);
+		padding-left: var(--space-sm);
+	}
+	.website-title {
+		font-weight: 500;
+	}
+	.website-description {
+		font-style: italic;
+		-webkit-line-clamp: 3;
+	}
+	.explainer {
+		font-size: var(--text-sm);
+		opacity: var(--opacity-subtle);
+		font-style: italic;
+	}
+</style>

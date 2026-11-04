@@ -1,0 +1,145 @@
+---
+import FontAwesome from '@components/form/FontAwesome.svelte';
+import { error } from '@utils/logger';
+import { safeFetch } from '@utils/safe-fetch';
+import { fetchGitHubStats } from '@utils/fetch-repo-info';
+
+const { github } = Astro.props;
+
+interface RepoMetrics {
+  stars: number;
+  forks: number;
+  openIssues: number;
+  language: string;
+  licenseSpdx: string;
+  licenseName: string;
+}
+
+const normalizeRepo = (repo: string) =>
+  repo.replace(/^https?:\/\/github\.com\//, '').replace(/\/+$/, '');
+
+// Fallback straight to the GitHub API when our API is unavailable.
+const fromGitHub = async (repo: string): Promise<RepoMetrics | null> => {
+  const headers: Record<string, string> = { 'User-Agent': 'awesome-privacy' };
+  const apiKey = import.meta.env.GITHUB_API_KEY;
+  if (apiKey) headers['Authorization'] = `token ${apiKey}`;
+  try {
+    const res = await safeFetch(`https://api.github.com/repos/${repo}`, { headers });
+    if (!res.ok) {
+      error('GitHub API', `HTTP ${res.status} for ${repo}`);
+      return null;
+    }
+    const data = await res.json();
+    return {
+      stars: data.stargazers_count ?? 0,
+      forks: data.forks_count ?? 0,
+      openIssues: data.open_issues_count ?? 0,
+      language: data.language ?? '',
+      licenseSpdx: data.license?.spdx_id ?? '',
+      licenseName: data.license?.name ?? '',
+    };
+  } catch (e) {
+    error('GitHub API', `Network error for ${repo}: ${e}`);
+    return null;
+  }
+};
+
+// Prefer our unified API, then fall back to the GitHub API directly.
+const getMetrics = async (repo: string): Promise<RepoMetrics | null> => {
+  const stats = await fetchGitHubStats(repo);
+  if (stats) {
+    const { info } = stats;
+    return {
+      stars: info.starCount,
+      forks: info.forksCount,
+      openIssues: info.openIssues,
+      language: info.language,
+      licenseSpdx: info.license,
+      licenseName: info.licenseName,
+    };
+  }
+  return fromGitHub(normalizeRepo(repo));
+};
+
+const formatLicense = (spdx: string) => {
+  if (!spdx) return 'Unknown';
+  if (spdx === 'NOASSERTION') return 'No License';
+  return spdx;
+};
+
+const formatBigNumber = (num: number | undefined) => {
+  if (num == null) return 0;
+  if (num > 1000) {
+    return `${(num / 1000).toFixed(1)}k`;
+  }
+  return num;
+};
+
+const metrics = await getMetrics(github);
+---
+
+<div class="github-metrics">
+  <span title={`GitHub repository:  ${github}`}>
+    <a href={`https://github.com/${github}`} target="_blank"><FontAwesome iconName="github" /> {github}</a>
+  </span>
+  { metrics && (
+    <span title={`GitHub Star Count: ${metrics.stars}`}>
+      <FontAwesome iconName="stars" /> {formatBigNumber(metrics.stars)}
+    </span>
+    <span title={`GitHub Fork Count: ${metrics.forks}`}>
+      <FontAwesome iconName="forks" /> {formatBigNumber(metrics.forks)}
+    </span>
+    <span title={`Open Issues / Bugs: ${metrics.openIssues}`}>
+      <FontAwesome iconName="issues" /> {formatBigNumber(metrics.openIssues)}
+    </span>
+    <span title={`Code licensed under ${metrics.licenseName}`}>
+      <FontAwesome iconName="license" /> {formatLicense(metrics.licenseSpdx)}
+    </span>
+    <span title={`Primary programming language ${metrics.language}`}>
+      <FontAwesome iconName="language" /> {metrics.language}
+    </span>
+  )}
+</div>
+
+
+<style lang="scss">
+.github-metrics {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  font-size: var(--text-sm);
+  opacity: var(--opacity-muted);
+  flex-wrap: wrap;
+  span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--foreground);
+    gap: var(--space-xs);
+    padding: var(--space-sm) 0;
+
+    a {
+      color: var(--foreground);
+      text-decoration: none;
+      align-items: center;
+      display: flex;
+      gap: var(--space-xs);
+      transition: var(--transition-normal);
+      color: var(--accent-3-text);
+      &:hover {
+        color: var(--accent-3-text);
+        text-decoration: underline;
+      }
+    }
+
+    img {
+      border-radius: var(--curve-md);
+    }
+  }
+  :global(svg) {
+    color: var(--foreground);
+    width: var(--text-md);
+    height: var(--text-md);
+  }
+}
+</style>

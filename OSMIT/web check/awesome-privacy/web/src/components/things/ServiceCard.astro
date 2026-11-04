@@ -1,0 +1,81 @@
+---
+import { formatLink, codebergUrl } from '@utils/parse-markdown';
+import type { Service } from 'src/types/Service';
+import FontAwesome from '@components/form/FontAwesome.svelte';
+import SaveListing from '@components/things/SaveListing.svelte';
+import ServiceIcon from '@components/things/ServiceIcon.astro';
+import { slugify } from '@utils/fetch-data';
+
+interface Props {
+	service: Service;
+	categoryName: string;
+	sectionName: string;
+}
+
+const { service, sectionName, categoryName } = Astro.props;
+---
+
+<div class="service" id={slugify(service.name)}>
+	<div class="service-head">
+		<a
+			class="service-title"
+			href={`/${slugify(categoryName)}/${slugify(sectionName)}/${slugify(service.name)}/`}
+		>
+			<h4>{service.name}</h4>
+		</a>
+		{service.followWith && <p class="follow-with">({service.followWith})</p>}
+	</div>
+
+	<div class="save-listing">
+		<SaveListing
+			client:visible
+			categoryName={categoryName}
+			sectionName={sectionName}
+			serviceName={service.name}
+		/>
+	</div>
+
+	<div class="service-body">
+		<ServiceIcon name={service.name} url={service.url} icon={service.icon} />
+		<div class="service-body">
+			<p set:html={service.description} />
+		</div>
+	</div>
+
+	<div class="service-links">
+		<a class="link" href={service.url}>
+			<FontAwesome iconName="website" />
+			<span>{formatLink(service.url)}</span>
+		</a>
+		{
+			service.github && (
+				<a class="link" href={`https://github.com/${service.github}`}>
+					<FontAwesome iconName="sourceCode" /> GitHub
+				</a>
+			)
+		}
+		{
+			service.codeberg && (
+				<a class="link" href={codebergUrl(service.codeberg)}>
+					<FontAwesome iconName="sourceCode" /> Codeberg
+				</a>
+			)
+		}
+		{
+			service.git && (
+				<a class="link" href={service.git}>
+					<FontAwesome iconName="sourceCode" /> Source
+				</a>
+			)
+		}
+		<a
+			href={`/${slugify(categoryName)}/${slugify(sectionName)}/${slugify(service.name)}/`}
+		>
+			<FontAwesome iconName="viewReport" /> View Report ➔
+		</a>
+	</div>
+</div>
+
+<style lang="scss">
+	@use './service-card.scss';
+</style>

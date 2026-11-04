@@ -1,0 +1,207 @@
+---
+
+import type { IoSApiResponse } from '@utils/fetch-ios-info';
+import { formatDate } from '@utils/dates-n-stuff';
+import FontAwesome from "@components/form/FontAwesome.svelte"
+
+
+interface Props {
+  iosData: IoSApiResponse;
+  url: string;
+};
+
+const { iosData } = Astro.props;
+
+const bytesToMb = (bytes: number) => (bytes / 1024 / 1024).toFixed(2);
+
+const makeRatingPercentage = (rating: number) => (rating / 5) * 100;
+
+const roundRatings = (rating: number) => Math.round(rating * 100) / 100;
+
+const putCommaInNumber = (num: number | string | undefined) => {
+  if (!num) return 'Unknown';
+  return typeof num === 'number' ? num.toLocaleString() : num;
+}
+
+---
+
+<div class="website-info-wrapper">
+  <div class="left">
+    <h4>App Info</h4>
+    <p class="website-title">
+      <img src={iosData.artworkUrl60} alt="" width="16" loading="lazy" />
+      {iosData.trackName}
+    </p>
+    <p class="website-description">{iosData.description}</p>
+
+    <h4>Rating</h4>
+    <div class="star-rating">
+      <div class="back-stars">
+        <FontAwesome iconName="ratingStar" />
+        <FontAwesome iconName="ratingStar" />
+        <FontAwesome iconName="ratingStar" />
+        <FontAwesome iconName="ratingStar" />
+        <FontAwesome iconName="ratingStar" />
+        <div class="front-stars" style={`width: ${makeRatingPercentage(iosData.averageUserRating)}%`}>
+          <FontAwesome iconName="ratingStar" />
+          <FontAwesome iconName="ratingStar" />
+          <FontAwesome iconName="ratingStar" />
+          <FontAwesome iconName="ratingStar" />
+          <FontAwesome iconName="ratingStar" />
+        </div>
+      </div>
+    </div>
+    <p class="rating-description">
+      Rated {roundRatings(iosData.averageUserRating)} out of 5 stars by {putCommaInNumber(iosData.userRatingCount)} users
+    </p>
+
+    <h4>Version Info</h4>
+    <ul class="list-table">
+      <li title={iosData.releaseNotes}>
+        <span class="lbl">Current Version</span>
+        <span class="val">{iosData.version}</span>
+      </li>
+      <li>
+        <span class="lbl">Last Updated</span>
+        <span class="val">{formatDate(iosData.currentVersionReleaseDate)}</span>
+      </li>
+      <li>
+        <span class="lbl">First Released</span>
+        <span class="val">{formatDate(iosData.releaseDate)}</span>
+      </li>
+      <li>
+        <span class="lbl">Minimum iOS Version</span>
+        <span class="val">{iosData.minimumOsVersion}</span>
+      </li>
+      <li>
+        <span class="lbl">Device Models Supported</span>
+        <span class="val">{iosData.supportedDevices ? iosData.supportedDevices.length : 'Unknown'}</span>
+      </li>
+    </ul>
+  </div>
+  <div class="right">
+
+    <h4>App Details</h4>
+    <ul class="list-table">
+      <li>
+        <span class="lbl">IPA Size</span>
+        <span class="val">{bytesToMb(iosData.fileSizeBytes)} Mb</span>
+      </li>
+      <li>
+        <span class="lbl">Price</span>
+        <span class="val">{iosData.formattedPrice} ({iosData.currency})</span>
+      </li>
+      <li>
+        <span class="lbl">Age Advisory</span>
+        <span class="val">{iosData.contentAdvisoryRating}</span>
+      </li>
+      {iosData.languageCodesISO2A && (
+      <li>
+        <span class="lbl">Supported Languages</span>
+        <span class="val" title={iosData.languageCodesISO2A.join(', ')}>{iosData.languageCodesISO2A.length}</span>
+      </li>
+      )}
+      <li>
+        <span class="lbl">Developer</span>
+        <span class="val"><a href={iosData.artistViewUrl}>{iosData.sellerName}</a></span>
+      </li>
+      <li>
+        <span class="lbl">Bundle ID</span>
+        <span class="val">{iosData.bundleId}</span>
+      </li>
+    </ul>
+
+    {iosData.screenshotUrls && (
+      <h4>Screenshots</h4>
+      <ul class="screenshots">
+        {iosData.screenshotUrls.map((url) => (
+          <li>
+            <img src={url} alt="App screenshot" width="100" loading="lazy" />
+          </li>
+        ))}
+      </ul>
+    )}
+    
+  </div>
+</div>
+
+
+<style lang="scss">
+@use '../../styles/mixins' as *;
+.website-info-wrapper {
+  @include detail-info-layout;
+}
+
+@include detail-info-base;
+
+ul {
+  &.list-table li {
+    .lbl {
+      font-weight: 400;
+    }
+  }
+}
+
+.website-title, .website-description {
+  font-size: var(--text-sm);
+  opacity: var(--opacity-subtle);
+  @include line-clamp(1);
+  border-left: 2px solid var(--accent-3);
+  padding-left: var(--space-sm);
+}
+.website-title {
+  font-weight: 500;
+}
+.website-description {
+  font-style: italic;
+  -webkit-line-clamp: 3;
+}
+.explainer {
+  font-size: var(--text-sm);
+  opacity: var(--opacity-subtle);
+  font-style: italic;
+}
+
+.star-rating {
+  position: relative;
+  display: inline-block;
+  margin: var(--space-md) 0;
+  :global(svg) {
+    font-size: var(--text-3xl);
+    gap: 0;
+    margin: 0;
+    padding: 0;
+  }
+  .back-stars {
+    display: flex;
+    :global(svg) {
+      color: var(--foreground);
+    }
+    .front-stars {
+      position: absolute;
+      top: 0;
+      left: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      width: 0;
+      display: flex;
+      :global(svg) {
+        color: var(--rating-neutral);
+      }
+    }
+  }
+}
+
+.rating-description {
+  font-size: var(--text-sm);
+  opacity: var(--opacity-subtle);
+  font-style: italic;
+}
+
+.screenshots {
+  display: flex;
+  gap: var(--space-sm);
+  overflow-x: auto;
+}
+
+</style>

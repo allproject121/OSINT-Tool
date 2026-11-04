@@ -1,0 +1,207 @@
+---
+import { dockerHubUrl, type TemplateResponse } from '@utils/fetch-docker-instructions';
+import { formatDate, timeAgo } from '@utils/dates-n-stuff'; 
+
+interface Props {
+  docker: TemplateResponse;
+}
+
+const { docker } = Astro.props;
+
+const formatBigNumber = (num: number): string => {
+  if (!num) return 'None';
+  return num.toLocaleString();
+};
+
+const { user, name } = docker.dockerHubData || {};
+const imageRef =
+  user && name ? `${user}/${name}` : docker.template?.image || null;
+const imageUrl = imageRef && dockerHubUrl(imageRef);
+---
+
+<div class="docker-info-wrap">
+
+  <div class="left">
+    { docker.template && (
+      <h4>Container Info</h4>
+      <p class="dockerhub-title">
+        <img src={docker.template.logo} alt="" width="16" loading="lazy" />
+        {docker.template.name}
+      </p>
+      <p class="dockerhub-description">{docker.template.description}</p>
+      <span class="tags">
+        {(docker.template.categories || []).map((category: string) => (
+          <span class="tag">#{category}</span>
+        ))}
+      </span>
+    )}
+
+    {docker.dockerHubData && Object.keys(docker.dockerHubData).length > 0 && (
+      <h4>DockerHub Metrics</h4>
+      <ul class="table">
+        <li>
+          <span class="lbl">Pull Count</span>
+          <span class="val">{formatBigNumber(docker.dockerHubData.pull_count)}</span>
+        </li>
+        <li>
+          <span class="lbl">Stars</span>
+          <span class="val">{formatBigNumber(docker.dockerHubData.star_count)}</span>
+        </li>
+        <li>
+          <span class="lbl">Date Created</span>
+          <span class="val">{formatDate(docker.dockerHubData.date_registered)}</span>
+        </li>
+        <li>
+          <span class="lbl">Last Updated</span>
+          <span class="val">{timeAgo(docker.dockerHubData.last_updated)}</span>
+        </li>
+      </ul>
+    )}
+
+    {imageUrl && (
+      <h4>View on DockerHub</h4>
+      <a href={imageUrl} target="_blank" rel="noreferrer">{imageRef}</a>
+    )}
+
+  </div>
+  <div class="right">
+    {docker.usage && docker.usage.dockerRunCommand && (
+      <h4>Run Command</h4>
+      <pre>{docker.usage.dockerRunCommand}</pre>
+    )}
+    {docker.usage && docker.usage.dockerComposeFile && (
+      <h4>Compose File</h4>
+      <pre>{docker.usage.dockerComposeFile}</pre>
+    )}
+
+    {docker.template && docker.template.env && (
+      <h4>Environment Variables</h4>
+      <ul class="table">
+        <li class="header">
+          <span class="lbl">Var Name</span>
+          <span class="val">Default</span>
+        </li>
+        {docker.template.env.map((env) => (
+          <li>
+            <span class="lbl">{env.name || env.label}</span>
+            <span class="val">{env.default || 'null'}</span>
+          </li>
+        ))}
+      </ul>
+    )}
+
+    {docker.template && docker.template.ports && (
+      <h4>Port List</h4>
+      <ul>
+        {docker.template.ports.map((port) => (
+          <li>{port}</li>
+        ))}
+      </ul>
+    )}
+
+    {docker.template && docker.template.volumes && (
+      <h4>Volume Mounting</h4>
+      <ul class="table wide">
+        <li class="header">
+          <span class="lbl">Container Path</span>
+          <span class="val">Host Bind</span>
+        </li>
+        {docker.template.volumes.map((volume) => (
+          <li>
+            <span class="lbl">{volume.container}</span>
+            <span class="val">{volume.bind || '(anonymous)'}</span>
+          </li>
+        ))}
+      </ul>
+    )}
+
+    {docker.dockerHubData && docker.dockerHubData.permissions && (
+      <h4>Permissions</h4>
+      <ul class="table">
+        {Object.entries(docker.dockerHubData.permissions).map(([perm, granted]) => (
+          <li>
+            <span class="lbl">{perm}</span>
+            <span class="val">{granted ? '✅ Yes' : '❎ No'}</span>
+          </li>
+        ))}
+      </ul>
+    )}
+    
+  </div>
+</div>
+
+<style lang="scss">
+  @use '../../styles/mixins' as *;
+  .docker-info-wrap {
+    @include detail-info-layout;
+  }
+
+  @include detail-info-base;
+
+  .left {
+    .dockerhub-title, .dockerhub-description {
+      font-size: var(--text-sm);
+      opacity: var(--opacity-subtle);
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      border-left: 2px solid var(--accent-3);
+      padding-left: var(--space-sm);
+    }
+    .dockerhub-title {
+      font-weight: 500;
+    }
+    .dockerhub-description {
+      font-style: italic;
+      -webkit-line-clamp: 3;
+    }
+  }
+
+  .table {
+    max-width: 15rem;
+    padding-left: 0;
+    &.wide {
+      max-width: none;
+    }
+    li {
+      display: flex;
+      justify-content: space-between;
+      .lbl {
+        font-weight: 500;
+      }
+      &.header {
+        border-bottom: 2px solid var(--accent);
+        .lbl { font-weight: 400; }
+      }
+    }
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    .tag {
+      margin: 0.1rem;
+      background: var(--accent-3-translucent);
+      border-radius: var(--curve-sm);
+      padding: 0.05rem 0.2rem;
+      font-size: var(--text-sm);
+      opacity: var(--opacity-subtle);
+    }
+  }
+  ul {
+    padding-left: var(--space-md);
+    list-style: circle;
+    max-height: 400px;
+    overflow: auto;
+  }
+
+  pre {
+      font-family: var(--font-code);
+      background: var(--background-form);
+      padding: 0.6rem var(--space-md);
+      border-radius: var(--curve-sm);
+      font-size: var(--text-sm);
+      overflow-x: auto;
+    }
+</style>
